@@ -1,0 +1,45 @@
+name: Deploy 55.is
+
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and build (if package.json exists)
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+            npm run build
+          else
+            echo "No package.json, will deploy repository files as static."
+          fi
+
+      - name: Prepare SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          DEST="/var/www/55-site/current/"
+          if [ -d dist ]; then
+            rsync -az --delete dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+          elif [ -d build ]; then
+            rsync -az --delete build/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+          else
+            rsync -az --delete --exclude ".git/" ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+          fi
