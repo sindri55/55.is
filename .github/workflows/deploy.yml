@@ -87,13 +87,11 @@ jobs:
       - name: Restart application
         run: |
           DEST="/var/www/55-site/current"
-          ssh -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" <<'EOF'
-set -e
-cd /var/www/55-site/current
-if command -v pm2 >/dev/null 2>&1; then
-  pm2 startOrReload ecosystem.config.cjs || pm2 start ecosystem.config.cjs
-  pm2 save
-else
-  echo "pm2 is not installed on the server. Install it or manage the Node process manually." >&2
-fi
-EOF
+          ssh -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" 'set -e;
+            cd /var/www/55-site/current;
+            if command -v pm2 >/dev/null 2>&1; then
+              pm2 startOrReload ecosystem.config.cjs || pm2 start ecosystem.config.cjs;
+              pm2 save;
+            else
+              echo "pm2 is not installed on the server. Install it or manage the Node process manually." >&2;
+            fi'
