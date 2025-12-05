@@ -7,6 +7,17 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      SMTP_HOST: ${{ secrets.SMTP_HOST }}
+      SMTP_PORT: ${{ secrets.SMTP_PORT }}
+      SMTP_USER: ${{ secrets.SMTP_USER }}
+      SMTP_PASS: ${{ secrets.SMTP_PASS }}
+      CONTACT_RECIPIENT: ${{ secrets.CONTACT_RECIPIENT }}
+      CONTACT_FROM: ${{ secrets.CONTACT_FROM }}
+      HUBSPOT_TOKEN: ${{ secrets.HUBSPOT_TOKEN }}
+      META_CAPI_TOKEN: ${{ secrets.META_CAPI_TOKEN }}
+      META_CAPI_PIXEL_ID: ${{ secrets.META_CAPI_PIXEL_ID }}
+      META_CAPI_TEST_EVENT_CODE: ${{ secrets.META_CAPI_TEST_EVENT_CODE }}
 
     steps:
       - name: Checkout
