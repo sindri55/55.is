@@ -17,13 +17,13 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install and build (if package.json exists)
+      - name: Install and build
         run: |
           if [ -f package.json ]; then
             npm ci || npm install
             npm run build
           else
-            echo "No package.json, will deploy repository files as static."
+            echo "No package.json found. Will deploy repository files as static."
           fi
 
       - name: Prepare SSH
@@ -31,15 +31,17 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Deploy to server
         run: |
           DEST="/var/www/55-site/current/"
+          RSYNC_SSH="ssh -p ${{ secrets.SSH_PORT }}"
+
           if [ -d dist ]; then
-            rsync -az --delete dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+            rsync -az --delete -e "$RSYNC_SSH" dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
           elif [ -d build ]; then
-            rsync -az --delete build/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+            rsync -az --delete -e "$RSYNC_SSH" build/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
           else
-            rsync -az --delete --exclude ".git/" ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+            rsync -az --delete -e "$RSYNC_SSH" --exclude ".git/" ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
           fi
