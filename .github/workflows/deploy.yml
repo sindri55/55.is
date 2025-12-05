@@ -68,7 +68,7 @@ jobs:
       - name: Write runtime environment
         run: |
           DEST="/var/www/55-site/current"
-          ssh -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "cat <<'EOF' > ${DEST}/.env.production
+          cat > runtime.env <<'EOF'
 SMTP_HOST=${SMTP_HOST}
 SMTP_PORT=${SMTP_PORT}
 SMTP_USER=${SMTP_USER}
@@ -80,7 +80,9 @@ META_CAPI_TOKEN=${META_CAPI_TOKEN}
 META_CAPI_PIXEL_ID=${META_CAPI_PIXEL_ID}
 META_CAPI_TEST_EVENT_CODE=${META_CAPI_TEST_EVENT_CODE}
 EOF
-chmod 600 ${DEST}/.env.production"
+          chmod 600 runtime.env
+          scp -P "${{ secrets.SSH_PORT }}" runtime.env "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}/.env.production"
+          rm runtime.env
 
       - name: Restart application
         run: |
