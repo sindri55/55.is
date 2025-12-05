@@ -38,7 +38,9 @@ jobs:
           DEST="/var/www/55-site/current/"
           RSYNC_SSH="ssh -p ${{ secrets.SSH_PORT }}"
 
-          if [ -d dist ]; then
+          if [ -d out ]; then
+            rsync -az --delete -e "$RSYNC_SSH" out/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+          elif [ -d dist ]; then
             rsync -az --delete -e "$RSYNC_SSH" dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
           elif [ -d build ]; then
             rsync -az --delete -e "$RSYNC_SSH" build/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
