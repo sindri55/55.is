@@ -17,7 +17,7 @@ const termsSections = [
   {
     title: '2. Almenn ákvæði',
     body: [
-      'Með því að nota 55.is, hafa samband eða kaupa þjónustu samþykkir þú þessa skilmála. Skilmálar geta breyst án fyrirvara og ný útgáfa birtist á 55.is.',
+      'Með því að nota 55 vefsíðuna, hafa samband eða kaupa þjónustu samþykkir þú þessa skilmála. Skilmálar geta breyst án fyrirvara og ný útgáfa birtist á 55.is.',
     ],
   },
   {
