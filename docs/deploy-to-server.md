@@ -1,122 +1,104 @@
 # Deploy: GitHub → Server (55.is)
 
-This project auto-deploys to the server on every push to `main` using GitHub Actions + SSH + rsync.
+The site now runs as a full Next.js server (standalone output) so API routes such as `/api/contact` work in production. Each push to `main` builds the app in GitHub Actions, rsyncs the bundled server to `/var/www/55-site/current`, writes a `.env.production`, and restarts PM2.
 
-## What we deployed
+## Domains & layout
 
-We split the old WordPress site away from the main domain:
+- WordPress stays isolated on `https://wp.55.is`
+- `https://55.is` serves this Next.js app via Nginx → PM2 → Node
+- Runtime folder: `/var/www/55-site/current`
 
-- WordPress lives on: `https://wp.55.is`
-- New custom site lives on: `https://55.is`
+## GitHub Actions workflow summary
 
-Nginx web root for the new site:
+1. Checkout + install dependencies
+2. `npm run build` (Next.js creates `.next/standalone`)
+3. rsync the following to the server:
+   - `.next/standalone/` → runtime root (contains `server.js` and node_modules)
+   - `.next/static/` → `${runtime}/.next/static`
+   - `public/`
+   - `ecosystem.config.cjs`
+4. Upload a fresh `.env.production` populated from GitHub Secrets
+5. `pm2 startOrReload ecosystem.config.cjs`
 
-- Live folder: `/var/www/55-site/current`
+The workflow requires these secrets:
 
-Nginx serves whatever files exist in that folder. For a static site, Nginx reload is not required per deploy.
+| Secret | Purpose |
+| --- | --- |
+| `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_PRIVATE_KEY` | SSH access for rsync / PM2 |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `CONTACT_RECIPIENT`, `CONTACT_FROM` | Contact email |
+| `HUBSPOT_TOKEN`, `META_CAPI_TOKEN`, `META_CAPI_PIXEL_ID`, `META_CAPI_TEST_EVENT_CODE` | Integrations |
 
-Server SSH configuration:
+## One-time server setup
 
-- SSH port: `2222`
-- User: `thor`
-- UFW allows: `80`, `443`, `2222`
+1. **Install Node + PM2**
+   ```bash
+   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+   sudo apt install -y nodejs build-essential
+   sudo npm i -g pm2
+   pm2 startup systemd -u thor --hp /home/thor
+   ```
+2. **Prepare deployment folder**
+   ```bash
+   sudo mkdir -p /var/www/55-site/current
+   sudo chown -R thor:www-data /var/www/55-site/current
+   sudo chmod -R g+rwX /var/www/55-site/current
+   ```
+3. **Authorize SSH key + rsync** (same as before)
+4. **Nginx reverse proxy (important!)**
 
-## How deployments work
+   Ensure the 55.is vhost forwards traffic to the Node server (listening on `127.0.0.1:3000`). Example:
+   ```nginx
+   server {
+     listen 80;
+     listen 443 ssl http2;
+     server_name 55.is;
 
-1. You push changes to GitHub on branch `main`
-2. GitHub Actions runs:
-   - checkout
-   - node setup
-   - install dependencies
-   - build
-3. GitHub Actions uses rsync over SSH to upload build output to the server:
-   - destination: `/var/www/55-site/current/`
+     ssl_certificate /etc/letsencrypt/live/55.is/fullchain.pem;
+     ssl_certificate_key /etc/letsencrypt/live/55.is/privkey.pem;
 
-### Build output mapping
+     location / {
+       proxy_pass http://127.0.0.1:3000;
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+     }
+   }
+   ```
+   Reload Nginx after editing.
 
-The deploy workflow checks output folders in this order:
+5. **PM2 process**
+   - First deploy will create `/var/www/55-site/current/server.js`
+   - PM2 uses `ecosystem.config.cjs` (shipped with the repo) to run `node server.js` with `HOSTNAME=0.0.0.0` and `PORT=3000`
+   - `pm2 save` keeps the process alive across reboots
 
-1. `out/` (Next.js static export)
-2. `dist/` (Vite fallback)
-3. `build/`
-4. Repo root (static fallback)
+## Manual verification
 
-## Required GitHub Secrets
+From your laptop:
 
-Repo settings → Secrets and variables → Actions
-
-- `SSH_HOST` = server IP (example: `146.190.18.106`)
-- `SSH_PORT` = `2222`
-- `SSH_USER` = `thor`
-- `SSH_PRIVATE_KEY` = OpenSSH private key (`BEGIN OPENSSH PRIVATE KEY` ... `END OPENSSH PRIVATE KEY`)
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `CONTACT_RECIPIENT`, `CONTACT_FROM`
-
-Important: treat these keys as sensitive. If they leak, rotate them immediately.
-
-## Server setup (one-time)
+```bash
+nc -vz SSH_HOST SSH_PORT
+ssh -p SSH_PORT thor@SSH_HOST "pm2 status 55is"
+```
 
 On the server:
 
-1. Ensure `thor` can write to the live web folder:
-   ```bash
-   sudo chown -R thor:www-data /var/www/55-site/current
-   sudo chmod -R g+rwX /var/www/55-site/current
+```bash
+cd /var/www/55-site/current
+ls -lah
+pm2 logs 55is
+curl -I http://127.0.0.1:3000/
+```
 
-	2.	Ensure rsync is installed:
+From the internet: `curl -I https://55.is`, submit the contact form, ensure email arrives.
 
-rsync --version || sudo apt update && sudo apt install -y rsync
+## Troubleshooting
 
+| Symptom | Fix |
+| --- | --- |
+| `pm2` not found in deploy logs | Install pm2 globally and rerun `pm2 startup`, `pm2 save` |
+| Contact form 405 | Nginx still serving static files; update vhost to proxy to Node |
+| 500 on `/api/contact` | Check `/var/www/55-site/current/.env.production` matches expected secrets |
+| Static assets 404 | Ensure `.next/static` and `public` were rsynced (workflow handles automatically) |
 
-	3.	Ensure the deploy public key is in:
-	•	/home/thor/.ssh/authorized_keys
-
-Permissions should be:
-
-sudo chmod 700 /home/thor/.ssh
-sudo chmod 600 /home/thor/.ssh/authorized_keys
-sudo chown -R thor:thor /home/thor/.ssh
-
-Manual sanity checks
-
-From local machine:
-
-nc -vz 146.190.18.106 2222
-ssh -p 2222 -i ~/deploy-55is thor@146.190.18.106 "whoami"
-
-On server:
-
-ls -lah /var/www/55-site/current | head
-
-Public check:
-	•	Open https://55.is in a private window.
-	•	Or:
-
-curl -I --http1.1 https://55.is
-
-
-
-Troubleshooting
-
-GitHub Actions fails at ssh-keyscan
-
-Cause: wrong host/port or firewall blocks access.
-Fix:
-	•	confirm SSH_PORT is 2222
-	•	confirm UFW allows 2222
-	•	confirm provider firewall allows 2222
-
-Deploy succeeds but site does not update
-
-Common causes:
-	•	build output folder is not dist/ or build/
-	•	Nginx root is not /var/www/55-site/current
-	•	browser cache
-
-Check:
-
-ls -lah /var/www/55-site/current
-
-WordPress redirects or breaks
-
-WordPress should only be on wp.55.is.
-If 55.is shows WP, the 55.is vhost is pointing to the wrong root.
+Once these pieces are in place, the contact API and any future server routes work exactly as in local development. Push → build → rsync → PM2 reload. All that’s left is enjoying working forms in production.

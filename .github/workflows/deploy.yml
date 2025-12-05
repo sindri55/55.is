@@ -46,15 +46,52 @@ jobs:
 
       - name: Deploy to server
         run: |
-          DEST="/var/www/55-site/current/"
+          DEST="/var/www/55-site/current"
           RSYNC_SSH="ssh -p ${{ secrets.SSH_PORT }}"
 
-          if [ -d out ]; then
-            rsync -az --delete -e "$RSYNC_SSH" out/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
-          elif [ -d dist ]; then
-            rsync -az --delete -e "$RSYNC_SSH" dist/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
-          elif [ -d build ]; then
-            rsync -az --delete -e "$RSYNC_SSH" build/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+          $RSYNC_SSH "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "mkdir -p ${DEST} ${DEST}/.next/static ${DEST}/public"
+
+          if [ -d .next/standalone ]; then
+            rsync -az --delete -e "$RSYNC_SSH" .next/standalone/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}/"
+            rsync -az --delete -e "$RSYNC_SSH" .next/static/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}/.next/static/"
+            if [ -d public ]; then
+              rsync -az --delete -e "$RSYNC_SSH" public/ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}/public/"
+            fi
+            if [ -f ecosystem.config.cjs ]; then
+              rsync -az -e "$RSYNC_SSH" ecosystem.config.cjs "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}/ecosystem.config.cjs"
+            fi
           else
-            rsync -az --delete -e "$RSYNC_SSH" --exclude ".git/" ./ "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:${DEST}"
+            echo "Standalone output missing. Ensure next.config.mjs sets output: 'standalone'."
+            exit 1
           fi
+
+      - name: Write runtime environment
+        run: |
+          DEST="/var/www/55-site/current"
+          ssh -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "cat <<'EOF' > ${DEST}/.env.production
+SMTP_HOST=${SMTP_HOST}
+SMTP_PORT=${SMTP_PORT}
+SMTP_USER=${SMTP_USER}
+SMTP_PASS=${SMTP_PASS}
+CONTACT_RECIPIENT=${CONTACT_RECIPIENT}
+CONTACT_FROM=${CONTACT_FROM}
+HUBSPOT_TOKEN=${HUBSPOT_TOKEN}
+META_CAPI_TOKEN=${META_CAPI_TOKEN}
+META_CAPI_PIXEL_ID=${META_CAPI_PIXEL_ID}
+META_CAPI_TEST_EVENT_CODE=${META_CAPI_TEST_EVENT_CODE}
+EOF
+chmod 600 ${DEST}/.env.production"
+
+      - name: Restart application
+        run: |
+          DEST="/var/www/55-site/current"
+          ssh -p "${{ secrets.SSH_PORT }}" "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" <<'EOF'
+set -e
+cd /var/www/55-site/current
+if command -v pm2 >/dev/null 2>&1; then
+  pm2 startOrReload ecosystem.config.cjs || pm2 start ecosystem.config.cjs
+  pm2 save
+else
+  echo "pm2 is not installed on the server. Install it or manage the Node process manually." >&2
+fi
+EOF

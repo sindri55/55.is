@@ -17,7 +17,7 @@ export function generateMetadata({ params }: BlogDetailPageProps): Metadata {
   const post = blogPosts.find((p) => p.id === params.slug);
   if (!post) {
     return {
-      title: 'Færsla fannst ekki | Blogg 55.is',
+      title: 'Færsla fannst ekki | Blog 55.is',
     };
   }
 
